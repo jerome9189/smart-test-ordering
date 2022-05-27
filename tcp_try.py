@@ -1,4 +1,3 @@
-import cProfile
 import pandas as pd
 import itertools
 from functools import cache
@@ -6,14 +5,10 @@ from random import sample
 
 
 # data loading, initialization
-test_cases = ['translations', 'test:macos', 'test:linux',
-              'inkscape:windows:x64', 'inkscape:macos', 'appimage:linux', 'inkscape:linux']
-# test_cases = test_cases[:-1]
-# test_cases = ['translations', 'test:macos', 'test:linux',
-#               'inkscape:windows:x64', 'inkscape:macos', 'appimage:linux']
+test_cases = ['a', 'b']
 
-statuses_df = pd.read_csv('statuses_big_with_failures.csv', index_col=[0])
-durations_df = pd.read_csv('durations_big_with_failures.csv', index_col=[0])
+statuses_df = pd.read_csv('statuses_abc.csv', index_col=[0])
+durations_df = pd.read_csv('durations_abc.csv', index_col=[0])
 failure_times = {}
 success_times = {}
 for case in test_cases:
@@ -29,6 +24,7 @@ for case in test_cases:
         success_times[case] = failed_time_col.iloc[0]
 
 
+@cache
 def get_scenario_probability(sequence_until_failure):
     """Compute probability of all test cases but the last one passing for a given
     sequence of test cases
@@ -55,11 +51,10 @@ def get_expected_ttff(order, best_time=float('inf')):
     cur_time = 0
     for i, case in enumerate(order):
         scenario_probability = get_scenario_probability(order[:i+1])
-        if scenario_probability != 0:
-            cur_time += (failure_times[case] + sum([success_times[x]
-                     for x in order[:i]])) * scenario_probability
-        else:
+        if scenario_probability == 0:
             continue
+        cur_time += (failure_times[case] + sum([success_times[x]
+                                                for x in order[:i]])) * scenario_probability
         if cur_time >= best_time:
             return float('inf')
     return cur_time
@@ -94,7 +89,7 @@ def get_greedy_order():
                 min_case = case
         all_cases.remove(min_case)
         result.append(min_case)
-    return tuple(result)
+    return result
 
 
 def get_greedy_probabilistic_order():
@@ -129,28 +124,23 @@ def get_true_mean_ttff(order):
                 break
     return mean_ttff / len(statuses_df)
 
+
 if __name__ == '__main__':
     print('-'*10)
-    with cProfile.Profile() as pr:
-        best_order = get_best_order()
-    pr.print_stats(sort='cumtime')
+    best_order = get_best_order()
     print(f'best ordering = {best_order}')
     print(f'mean ttff for best ordering = {get_true_mean_ttff(best_order)}')
-    print(f'expected={get_expected_ttff(best_order)}')
     print('-'*10)
     greedy_order = get_greedy_order()
     print(f'greedy ordering = {greedy_order}')
     print(f'mean ttff for greedy ordering = {get_true_mean_ttff(greedy_order)}')
-    print(f'expected={get_expected_ttff(greedy_order)}')
     print('-'*10)
     greedy_probabilistic_order = get_greedy_probabilistic_order()
     print(f'greedy probabilistic ordering = {greedy_probabilistic_order}')
     print(f'mean ttff for greedy probabilistic ordering = {get_true_mean_ttff(greedy_probabilistic_order)}')
-    print(f'expected={get_expected_ttff(greedy_probabilistic_order)}')
     print('-'*10)
     print(f'default ordering = {tuple(test_cases)}')
-    print(f'mean ttff for default ordering = {get_true_mean_ttff(tuple(test_cases))}')
-    print(f'expected={get_expected_ttff(tuple(test_cases))}')
+    print(f'mean ttff for default ordering = {get_true_mean_ttff(test_cases)}')
     print('-'*10)
     avg_mean_ttf_random = 0
     for i in range(50):
