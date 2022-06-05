@@ -2,13 +2,35 @@ import pandas as pd
 import itertools
 from functools import cache
 from random import sample
+from tqdm import tqdm
 
+alpha = 1
 
 # data loading, initialization
-test_cases = ['a', 'b']
+test_cases = ['com.thinkaurelius.titan.blueprints.BerkeleyJEBlueprintsTest',
+ 'com.thinkaurelius.titan.blueprints.InternalCassandraBlueprintsTest',
+ 'com.thinkaurelius.titan.diskstorage.berkeleyje.BerkeleyDBjeKeyColumnValueTest',
+ 'com.thinkaurelius.titan.diskstorage.berkeleyje.BerkeleyDBjeKeyColumnValueVariableTest',
+ 'com.thinkaurelius.titan.diskstorage.berkeleyje.BerkeleyJEKeyValueTest',
+ 'com.thinkaurelius.titan.diskstorage.berkeleyje.BerkeleyJeHashKeyColumnValueTest',
+ 'com.thinkaurelius.titan.diskstorage.cassandra.UUIDTest',
+ 'com.thinkaurelius.titan.diskstorage.locking.LocalLockMediatorTest',
+ 'com.thinkaurelius.titan.diskstorage.util.StorageFeaturesTest',
+ 'com.thinkaurelius.titan.graphdb.astyanax.InternalAstyanaxGraphTest',
+ 'com.thinkaurelius.titan.graphdb.berkeleyje.BerkeleyJEGraphTest',
+ 'com.thinkaurelius.titan.graphdb.idmanagement.IDManagementTest',
+ 'com.thinkaurelius.titan.graphdb.idmanagement.IDPoolTest',
+ 'com.thinkaurelius.titan.graphdb.idmanagement.VariableLongTest',
+ 'com.thinkaurelius.titan.graphdb.idmanagement.VertexIDAssignerTest',
+ 'com.thinkaurelius.titan.graphdb.serializer.ByteBufferTest',
+ 'com.thinkaurelius.titan.graphdb.serializer.KryoTest',
+ 'com.thinkaurelius.titan.graphdb.serializer.SerializerTest',
+ 'com.thinkaurelius.titan.util.datastructures.BitMapTest',
+ 'com.thinkaurelius.titan.util.datastructures.RandomRemovalListTest']
 
-statuses_df = pd.read_csv('statuses_abc.csv', index_col=[0])
-durations_df = pd.read_csv('durations_abc.csv', index_col=[0])
+FILENAME = 'thinkaurelius@titan'
+statuses_df = pd.read_csv(f'{FILENAME}_statuses.csv', index_col=[0])
+durations_df = pd.read_csv(f'{FILENAME}_durations.csv', index_col=[0])
 failure_times = {}
 success_times = {}
 for case in test_cases:
@@ -25,7 +47,7 @@ for case in test_cases:
 
 
 @cache
-def get_scenario_probability(sequence_until_failure):
+def     get_scenario_probability(sequence_until_failure):
     """Compute probability of all test cases but the last one passing for a given
     sequence of test cases
 
@@ -36,10 +58,11 @@ def get_scenario_probability(sequence_until_failure):
     if len(sequence_until_failure) > 1:
         query += ' & '.join([' '] + [f'`{case}`==True' for case in sequence_until_failure[:-1]])
     statuses_df_filtered = statuses_df.query(query)
-    probability = len(statuses_df_filtered) / len(statuses_df)
+    d = 2 ** len(sequence_until_failure)
+    probability = (len(statuses_df_filtered) + alpha) / (len(statuses_df) + (alpha * d))
     return probability
 
-
+@cache
 def get_expected_ttff(order, best_time=float('inf')):
     """Returns expected value of the time till first failure (ttff) for a given
     test suite ordering
@@ -60,9 +83,10 @@ def get_expected_ttff(order, best_time=float('inf')):
     return cur_time
 
 
-def get_best_order():
+def get_em_order():
     best_order = test_cases
     best_time = float('inf')
+    # for order in tqdm(itertools.permutations(best_order), total=math.factorial(len(test_cases))):
     for order in itertools.permutations(best_order):
         cur_time = get_expected_ttff(order, best_time)
         if cur_time < best_time:
@@ -71,7 +95,7 @@ def get_best_order():
     return best_order
 
 
-def get_greedy_order():
+def get_greedy_em_order():
     all_cases = set(test_cases)
     result = list()
     while all_cases:
@@ -124,26 +148,42 @@ def get_true_mean_ttff(order):
                 break
     return mean_ttff / len(statuses_df)
 
+def get_best_mean_ttff():
+    mean_ttff = 0
+    for status_row, duration_row in zip(statuses_df.iterrows(), durations_df.iterrows()):
+        min_time = float('inf')
+        for case in test_cases:
+            if not status_row[1][case]:
+                min_time = min(min_time, duration_row[1][case])
+        mean_ttff += min_time
+        # for case in order:
+        #     mean_ttff += duration_row[1][case]
+        #     # if this test case failed
+        #     if not status_row[1][case]:
+        #         break
+    return mean_ttff / len(statuses_df)
+
 
 if __name__ == '__main__':
     print('-'*10)
-    best_order = get_best_order()
-    print(f'best ordering = {best_order}')
-    print(f'mean ttff for best ordering = {get_true_mean_ttff(best_order)}')
-    print('-'*10)
-    greedy_order = get_greedy_order()
-    print(f'greedy ordering = {greedy_order}')
-    print(f'mean ttff for greedy ordering = {get_true_mean_ttff(greedy_order)}')
+    greedy_em_order = get_greedy_em_order()
+    # # uncomment this to see order
+    # # print(f'greedy em ordering = {greedy_em_order}')
+    print(f'mean ttff for greedy em ordering = {get_true_mean_ttff(greedy_em_order)}')
     print('-'*10)
     greedy_probabilistic_order = get_greedy_probabilistic_order()
-    print(f'greedy probabilistic ordering = {greedy_probabilistic_order}')
+    # print(f'greedy probabilistic ordering = {greedy_probabilistic_order}')
     print(f'mean ttff for greedy probabilistic ordering = {get_true_mean_ttff(greedy_probabilistic_order)}')
-    print('-'*10)
-    print(f'default ordering = {tuple(test_cases)}')
-    print(f'mean ttff for default ordering = {get_true_mean_ttff(test_cases)}')
     print('-'*10)
     avg_mean_ttf_random = 0
     for i in range(50):
         avg_mean_ttf_random += get_true_mean_ttff(sample(test_cases, len(test_cases)))
     avg_mean_ttf_random /= 50
     print(f'(averaged) mean ttff for random ordering = {avg_mean_ttf_random}')
+    print('-'*10)
+    print(f'(averaged) best possible ttff for each test suite execution = {get_best_mean_ttff()}')
+    print('-'*10)
+    em_order = get_em_order()
+    # print(f'em ordering = {em_order}')
+    print(f'mean ttff for em ordering = {get_true_mean_ttff(em_order)}')
+    print('-'*10)
