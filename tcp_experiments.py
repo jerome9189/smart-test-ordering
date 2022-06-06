@@ -47,7 +47,7 @@ for case in test_cases:
 
 
 @cache
-def     get_scenario_probability(sequence_until_failure):
+def get_scenario_probability(sequence_until_failure):
     """Compute probability of all test cases but the last one passing for a given
     sequence of test cases
 
@@ -103,9 +103,6 @@ def get_greedy_em_order():
         min_case = list(all_cases)[0]
         for case in all_cases:
             scenario_probability = get_scenario_probability(tuple(result + [case]))
-            if scenario_probability == 0:
-                min_case = case
-                break
             term = (failure_times[case] +
                          sum([success_times[x] for x in result])) * scenario_probability
             if term < min_term:
